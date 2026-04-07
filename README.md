@@ -1,7 +1,5 @@
 # Star Citizen MCP (SCMCP)
 
-![Powered by UEX](image.png)
-
 [![Build and Publish Docker Image](https://github.com/voidput/SCMCP/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/voidput/SCMCP/actions/workflows/docker-publish.yml)
 [![Docker Image Version](https://img.shields.io/docker/v/voidput/scmcp?sort=semver)](https://hub.docker.com/r/voidput/scmcp)
 [![License: ISC](https://img.shields.io/badge/License-ISC-blue.svg)](https://opensource.org/licenses/ISC)
@@ -84,3 +82,10 @@ docker run -e UEXTOKEN=your_token voidput/scmcp
 ## Release & Versioning
 
 This project uses `semantic-release` to automate versioning and changelog generation based on commit messages. Follow conventional commit standards (e.g., `feat:`, `fix:`) to trigger automated releases!
+
+---
+<p align="center">
+  <a href="https://uexcorp.space/">
+    <img src="image.png" alt="Powered by UEX" height="30">
+  </a>
+</p>
