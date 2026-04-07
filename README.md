@@ -1,64 +1,63 @@
-# Star Citizen MCP Server
+# Star Citizen MCP (SCMCP)
 
-An MCP server for Star Citizen, providing tools to query data from UEX Corp and the Star Citizen Wiki.
+A Model Context Protocol (MCP) server providing real-time access to Star Citizen market data, trade routes, and wiki information.
 
 ## Features
+- **Commodity Prices & Averages:** Fetch current and historical pricing for commodities via UEX.
+- **Trade Routes:** Find profitable trade routes based on your cargo capacity and available investment.
+- **Terminal & Location Data:** List trading terminals, outposts, and cities across systems like Stanton and Pyro.
+- **Wiki Search:** Query the Star Citizen Wiki for ships, items, components, and lore.
+- **Built-in Caching:** API responses are automatically cached in-memory for 5 minutes to significantly reduce latency and redundant network requests.
 
-- **UEX Corp API Integration**:
-  - Get list of commodities and terminals.
-  - Get real-time commodity prices and averages.
-  - Suggest trade routes based on investment and cargo capacity.
-  - Get commodity rankings (e.g., profit).
-- **Star Citizen Wiki API Integration**:
-  - Search for items, ships, or lore.
-  - Get detailed information about vehicles (ships/ground vehicles).
-  - Get detailed information about items (weapons, armor, components).
+## Available Tools
+- `uex_get_commodities`: List all commodities.
+- `uex_get_commodity_prices`: Get current commodity prices (filterable by system, planet, and terminal).
+- `uex_get_commodity_averages`: Get historical average prices over time.
+- `uex_get_terminals`: List trading terminals (filterable by system and planet).
+- `uex_get_trade_routes`: Find optimized, high-profit trade routes.
+- `uex_get_commodity_ranking`: Rank commodities by their profitability metrics.
+- `scw_search`: Search the Star Citizen Wiki.
+- `scw_get_vehicle`: Retrieve detailed ship and ground vehicle data.
+- `scw_get_item`: Retrieve weapon, armor, and ship component data.
 
-## Installation
+## Installation & Local Development
 
-1. Clone this repository.
-2. Install dependencies:
-   ```bash
-   npm install
-   ```
-3. Create a `.env` file and add your UEX Corp API token:
-   ```env
-   UEXTOKEN=your_uex_token_here
-   ```
-4. Build the project:
-   ```bash
-   npm run build
-   ```
-
-## Configuration for Claude Desktop
-
-Add the following to your `claude_desktop_config.json`:
-
-```json
-{
-  "mcpServers": {
-    "star-citizen": {
-      "command": "node",
-      "args": ["/path/to/SCMCP/dist/index.js"],
-      "env": {
-        "UEXTOKEN": "your_uex_token_here"
-      }
-    }
-  }
-}
+Create a `.env` file in the root directory:
+```env
+UEXTOKEN=your_uex_api_token
 ```
 
-## Tools
+Install dependencies:
+```bash
+npm install
+```
 
-### UEX Tools
-- `uex_get_commodities`: List all commodities.
-- `uex_get_commodity_prices`: Get current prices for a commodity.
-- `uex_get_commodity_averages`: Get average prices over time.
-- `uex_get_terminals`: List all locations.
-- `uex_get_trade_routes`: Get suggested trade routes.
-- `uex_get_commodity_ranking`: Get commodity rankings.
+Run linting and formatting:
+```bash
+npm run lint
+npm run format
+```
 
-### Star Citizen Wiki Tools
-- `scw_search`: Search the wiki.
-- `scw_get_vehicle`: Get ship/vehicle details.
-- `scw_get_item`: Get item details (weapons, components, etc.).
+Run tests:
+```bash
+npm run test
+```
+
+Start the MCP server:
+```bash
+npm run build
+npm start
+```
+
+## Docker
+
+A Docker image is automatically built, tested, and published to Docker Hub upon release.
+
+```bash
+docker pull voidput/scmcp
+docker run -e UEXTOKEN=your_token voidput/scmcp
+```
+
+## Release & Versioning
+
+This project uses `semantic-release` to automate versioning and changelog generation based on commit messages. Follow conventional commit standards (e.g., `feat:`, `fix:`) to trigger automated releases!
