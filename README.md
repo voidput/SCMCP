@@ -2,6 +2,10 @@
 
 ![Powered by UEX](image.png)
 
+[![Build and Publish Docker Image](https://github.com/voidput/SCMCP/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/voidput/SCMCP/actions/workflows/docker-publish.yml)
+[![Docker Image Version](https://img.shields.io/docker/v/voidput/scmcp?sort=semver)](https://hub.docker.com/r/voidput/scmcp)
+[![License: ISC](https://img.shields.io/badge/License-ISC-blue.svg)](https://opensource.org/licenses/ISC)
+
 A Model Context Protocol (MCP) server providing real-time access to Star Citizen market data, trade routes, and wiki information. This MCP is designed to enable AI assistants like Claude and Gemini to seamlessly retrieve the latest Star Citizen trading data and lore directly into your chat!
 
 ## Features
