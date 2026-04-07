@@ -61,7 +61,7 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           # This specifies the image name on Docker Hub
-          images: ${{ secrets.DOCKERHUB_USERNAME }}/scmcp
+          images: voidput/scmcp
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
