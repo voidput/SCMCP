@@ -19,6 +19,8 @@ A Model Context Protocol (MCP) server providing real-time access to Star Citizen
 - `scw_search`: Search the Star Citizen Wiki.
 - `scw_get_vehicle`: Retrieve detailed ship and ground vehicle data.
 - `scw_get_item`: Retrieve weapon, armor, and ship component data.
+- `sct_search`: Search Star Citizen Tools (starcitizen.tools) for any topic.
+- `sct_get_article`: Get the text content of an article from Star Citizen Tools (starcitizen.tools).
 
 ## Installation & Local Development
 
