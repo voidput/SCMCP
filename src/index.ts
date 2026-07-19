@@ -293,7 +293,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     if (name === "uex_get_commodities") {
       const response = await fetchWithCache(uexClient, "/commodities");
       return {
-        content: [{ type: "text", text: formatOutput(response.data.data) }],
+        content: [{ type: "text", text: formatOutput(response.data?.data ?? []) }],
       };
     }
 
@@ -310,7 +310,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         params: { commodity_name },
       });
 
-      let data = response.data.data;
+      let data = response.data?.data ?? [];
       if (Array.isArray(data)) {
         if (star_system_name) {
           data = data.filter(
@@ -346,7 +346,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         params: { commodity_name },
       });
       return {
-        content: [{ type: "text", text: formatOutput(response.data.data) }],
+        content: [{ type: "text", text: formatOutput(response.data?.data ?? []) }],
       };
     }
 
@@ -359,7 +359,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         .parse(args || {});
       const response = await fetchWithCache(uexClient, "/terminals");
 
-      let data = response.data.data;
+      let data = response.data?.data ?? [];
       if (Array.isArray(data)) {
         if (star_system_name) {
           data = data.filter(
@@ -393,14 +393,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         params: { investment, scu: cargo_capacity },
       });
       return {
-        content: [{ type: "text", text: formatOutput(response.data.data) }],
+        content: [{ type: "text", text: formatOutput(response.data?.data ?? []) }],
       };
     }
 
     if (name === "uex_get_commodity_ranking") {
       const response = await fetchWithCache(uexClient, "/commodities_ranking");
       return {
-        content: [{ type: "text", text: formatOutput(response.data.data) }],
+        content: [{ type: "text", text: formatOutput(response.data?.data ?? []) }],
       };
     }
 
@@ -427,7 +427,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         `/vehicles/${encodeURIComponent(vehicleName)}`,
       );
       return {
-        content: [{ type: "text", text: formatOutput(response.data.data) }],
+        content: [{ type: "text", text: formatOutput(response.data?.data ?? {}) }],
       };
     }
 
@@ -435,7 +435,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const { name: itemName } = z.object({ name: z.string() }).parse(args);
       const response = await fetchWithCache(scwClient, `/items/${encodeURIComponent(itemName)}`);
       return {
-        content: [{ type: "text", text: formatOutput(response.data.data) }],
+        content: [{ type: "text", text: formatOutput(response.data?.data ?? {}) }],
       };
     }
 
