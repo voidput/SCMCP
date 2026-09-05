@@ -15,7 +15,7 @@ import {
   summarizeList,
   summarizeVehicle,
 } from "./format.js";
-import { listDatasets, readCollection, searchDataset } from "./localdata.js";
+import { collectLabels, GAME_DATA_DIR, listDatasets, readCollection, searchDataset } from "./localdata.js";
 import { USER_AGENT, VERSION } from "./useragent.js";
 import {
   DATASETS,
@@ -418,6 +418,28 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             limit: { type: "number", description: "Records to return (default 25, max 200)." },
           },
           required: ["dataset", "collection"],
+        },
+      },
+      {
+        name: "sc_get_vocabulary",
+        description:
+          "Distinct in-game names for biasing a speech recognizer's initial prompt - commodities, manufacturers, and (when SCMCP_GAME_DATA_DIR is set) locally extracted names like ore signatures, blueprints, and Wikelo trades no public API exposes. Local and public sources are merged; local is preferred when both exist for the same term. Always works with no local data configured - it just returns fewer terms.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            include_commodities: {
+              type: "boolean",
+              description: "Include tradeable commodity names from UEX Corp (default true).",
+            },
+            include_manufacturers: {
+              type: "boolean",
+              description: "Include ship/vehicle manufacturer names from the Star Citizen Wiki (default true).",
+            },
+            limit: {
+              type: "number",
+              description: "Cap on locally extracted labels merged in (default 1000).",
+            },
+          },
         },
       },
       {
@@ -1007,6 +1029,81 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         .parse(args);
       const result = await readCollection(dataset, collection, { offset, limit });
       return { content: [{ type: "text", text: formatOutput(result) }] };
+    }
+
+    if (name === "sc_get_vocabulary") {
+      const { include_commodities, include_manufacturers, limit } = z
+        .object({
+          include_commodities: z.boolean().optional(),
+          include_manufacturers: z.boolean().optional(),
+          limit: z.number().optional(),
+        })
+        .parse(args || {});
+
+      const terms = new Set<string>();
+      const sources: string[] = [];
+
+      if (GAME_DATA_DIR) {
+        try {
+          const local = await collectLabels(undefined, { limit });
+          for (const label of local.labels) terms.add(label);
+          if (local.labels.length > 0) {
+            sources.push(`local (${local.datasets_scanned.length} datasets, ${local.labels.length} terms)`);
+          }
+        } catch {
+          // SCMCP_GAME_DATA_DIR set but unreadable - fall through to the public API only,
+          // the same degrade-gracefully behavior as the rest of the local-data tools.
+        }
+      }
+
+      if (include_commodities !== false) {
+        try {
+          const response = await fetchWithCache(uexClient, "/commodities");
+          let added = 0;
+          for (const row of response.data.data as Record<string, unknown>[]) {
+            if (!(row.is_sellable || row.is_buyable)) continue;
+            const cleaned = String(row.name).replace(/\s*\((Ore|Raw)\)\s*$/, "").trim();
+            if (!terms.has(cleaned)) added += 1;
+            terms.add(cleaned);
+          }
+          sources.push(`UEX commodities (${added} new terms)`);
+        } catch (err) {
+          sources.push(`UEX commodities unavailable: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+
+      if (include_manufacturers !== false) {
+        try {
+          const response = await fetchWithCache(scwClient, "/vehicles/filters");
+          // This endpoint responds {filters: {...}} directly, with no `data` wrapper -
+          // unlike every other scwClient call in this file.
+          const filters = response.data.filters ?? response.data.data?.filters ?? {};
+          let added = 0;
+          for (const entry of (filters.manufacturer ?? []) as { value?: string }[]) {
+            if (!entry.value || entry.value === "Unknown") continue;
+            if (!terms.has(entry.value)) added += 1;
+            terms.add(entry.value);
+          }
+          sources.push(`SCW manufacturers (${added} new terms)`);
+        } catch (err) {
+          sources.push(`SCW manufacturers unavailable: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+
+      const sorted = [...terms].sort();
+      return {
+        content: [
+          {
+            type: "text",
+            text: formatOutput({
+              term_count: sorted.length,
+              sources,
+              local_data_configured: Boolean(GAME_DATA_DIR),
+              terms: sorted,
+            }),
+          },
+        ],
+      };
     }
 
     if (name === "sc_list_builds") {

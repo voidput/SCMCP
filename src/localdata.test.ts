@@ -128,3 +128,36 @@ describe("when SCMCP_GAME_DATA_DIR is unset", () => {
     vi.stubEnv("SCMCP_GAME_DATA_DIR", dir);
   });
 });
+
+describe("collectLabels", () => {
+  it("collects distinct labels across every dataset", async () => {
+    const { collectLabels } = await mod();
+    const result = await collectLabels();
+    expect(result.datasets_scanned).toContain("game-mining");
+    // "Raw_Quantainium" and "Raw_Gold" from mineableElements, "Quantainium" and "Gold"
+    // (the keys, since oreSignatures' values are plain numbers) from oreSignatures.
+    expect(result.labels).toEqual(
+      expect.arrayContaining(["Raw_Quantainium", "Raw_Gold", "Quantainium", "Gold"]),
+    );
+  });
+
+  it("drops all-digit and too-short labels, which are ids rather than words", async () => {
+    const { collectLabels } = await mod();
+    const result = await collectLabels();
+    expect(result.labels.some((l) => /^\d+$/.test(l))).toBe(false);
+    expect(result.labels.every((l) => l.length >= 3)).toBe(true);
+  });
+
+  it("scopes to one dataset when named", async () => {
+    const { collectLabels } = await mod();
+    const result = await collectLabels("game-build-version");
+    expect(result.datasets_scanned).toEqual(["game-build-version"]);
+    expect(result.labels).not.toContain("Raw_Gold");
+  });
+
+  it("stops at the limit rather than scanning everything", async () => {
+    const { collectLabels } = await mod();
+    const result = await collectLabels(undefined, { limit: 2 });
+    expect(result.labels.length).toBeLessThanOrEqual(2);
+  });
+});

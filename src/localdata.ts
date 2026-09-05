@@ -108,6 +108,63 @@ function labelFor(key: string, value: unknown): string {
   return key;
 }
 
+/**
+ * Distinct human-readable labels across every local dataset - or one dataset if named.
+ *
+ * Built for STT vocabulary biasing: local data covers domains no public API exposes
+ * (ore signatures, blueprint names, mission brokers, Wikelo trades), and those are
+ * exactly the invented, game-specific words a speech recognizer has never seen. Numeric
+ * and single-character keys are dropped since they are usually IDs, not spoken words.
+ */
+export async function collectLabels(
+  dataset?: string,
+  options: { limit?: number } = {},
+): Promise<{ directory: string; datasets_scanned: string[]; labels: string[] }> {
+  const dir = assertConfigured();
+  const limit = options.limit ?? 1000;
+
+  let files: string[];
+  if (dataset) {
+    files = [dataset.endsWith(".json") ? dataset : `${dataset}.json`];
+  } else {
+    try {
+      files = (await fs.readdir(dir)).filter((f) => f.startsWith("game-") && f.endsWith(".json"));
+    } catch {
+      throw new Error(`SCMCP_GAME_DATA_DIR is set to "${dir}" but that directory cannot be read.`);
+    }
+  }
+
+  const labels = new Set<string>();
+  const scanned: string[] = [];
+
+  for (const file of files.sort()) {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(await fs.readFile(path.join(dir, file), "utf-8"));
+    } catch {
+      continue;
+    }
+    if (!parsed || typeof parsed !== "object") continue;
+    scanned.push(file.replace(/\.json$/, ""));
+
+    for (const [collectionName, collection] of Object.entries(parsed as Record<string, unknown>)) {
+      if (META_KEYS.has(collectionName)) continue;
+      for (const [key, value] of entriesOf(collection)) {
+        const label = labelFor(key, value);
+        // A label that fell back to the raw key is usually an index or an internal id
+        // (all-digit, or too short to be a spoken word) rather than something named.
+        if (/^\d+$/.test(label) || label.length < 3) continue;
+        labels.add(label);
+        if (labels.size >= limit) {
+          return { directory: dir, datasets_scanned: scanned, labels: [...labels].sort() };
+        }
+      }
+    }
+  }
+
+  return { directory: dir, datasets_scanned: scanned, labels: [...labels].sort() };
+}
+
 export interface SearchHit {
   collection: string;
   key: string;
