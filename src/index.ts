@@ -248,6 +248,42 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         },
       },
       {
+        name: "uex_get_ship_prices",
+        description:
+          "Get purchase prices for a specific ship across all vendors/terminals from UEX Corp.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            vehicle_name: {
+              type: "string",
+              description: "The name of the ship (e.g., 'Ursa Medivac', 'Carrack').",
+            },
+            star_system_name: {
+              type: "string",
+              description: "Optional: Filter by star system (e.g., 'Pyro', 'Stanton').",
+            },
+          },
+          required: ["vehicle_name"],
+        },
+      },
+      {
+        name: "scw_get_ship_comparison",
+        description:
+          "Compare specs (size, crew, cargo, speed, etc.) between two or more ships from the Star Citizen Wiki.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            ship_names: {
+              type: "array",
+              items: { type: "string" },
+              description: "List of ship names to compare (e.g., ['Ursa Medivac', 'Cutlass Red']).",
+              minItems: 2,
+            },
+          },
+          required: ["ship_names"],
+        },
+      },
+      {
         name: "uex_get_terminal_inventory",
         description:
           "Get inventory (items, ships, weapons) sold at a specific terminal from UEX data.",
@@ -683,6 +719,56 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             }),
           },
         ],
+      };
+    }
+
+    if (name === "uex_get_ship_prices") {
+      const { vehicle_name, star_system_name } = z
+        .object({
+          vehicle_name: z.string(),
+          star_system_name: z.string().optional(),
+        })
+        .parse(args);
+
+      const response = await fetchWithCache(uexClient, "/vehicles_purchases_prices", {
+        params: { vehicle_name },
+      });
+
+      let data = response.data.data;
+      if (Array.isArray(data) && star_system_name) {
+        data = data.filter(
+          (d: Record<string, unknown>) =>
+            typeof d.star_system_name === "string" &&
+            d.star_system_name.toLowerCase() === star_system_name.toLowerCase(),
+        );
+      }
+
+      return {
+        content: [{ type: "text", text: formatOutput(data) }],
+      };
+    }
+
+    if (name === "scw_get_ship_comparison") {
+      const { ship_names } = z
+        .object({ ship_names: z.array(z.string()).min(2) })
+        .parse(args);
+
+      const results = await Promise.all(
+        ship_names.map(async (shipName) => {
+          try {
+            const response = await fetchWithCache(
+              scwClient,
+              `/vehicles/${encodeURIComponent(shipName)}`,
+            );
+            return { ship: shipName, data: optimizeData(response.data.data) };
+          } catch {
+            return { ship: shipName, error: "Ship not found" };
+          }
+        }),
+      );
+
+      return {
+        content: [{ type: "text", text: formatOutput({ comparison: results }) }],
       };
     }
 
