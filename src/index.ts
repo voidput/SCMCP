@@ -7,6 +7,15 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
 import {
+  formatOutput,
+  formatOutputRaw,
+  isObject,
+  optimizeData,
+  summarizeItem,
+  summarizeList,
+  summarizeVehicle,
+} from "./format.js";
+import {
   DATASETS,
   type DatasetName,
   diffDatasets,
@@ -547,54 +556,6 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
   };
 });
 
-function isObject(data: unknown): data is Record<string, unknown> {
-  return typeof data === "object" && data !== null && !Array.isArray(data);
-}
-
-function optimizeData(data: unknown): unknown {
-  if (Array.isArray(data)) {
-    return data.map(optimizeData);
-  } else if (isObject(data)) {
-    return Object.fromEntries(
-      Object.entries(data)
-        .filter(([k, v]) => {
-          // Remove empty values to save context
-          if (v === null || v === "" || v === 0) return false;
-          // Filter out bulky historical/statistical data from UEX
-          if (
-            k.includes("_min") ||
-            k.includes("_max") ||
-            k.includes("_avg") ||
-            k.includes("_week") ||
-            k.includes("_month")
-          )
-            return false;
-          if (k.startsWith("volatility_") || k.startsWith("id_")) return false;
-          if (k === "date_added" || k === "date_modified") return false;
-          return true;
-        })
-        .map(([k, v]) => [k, optimizeData(v)]),
-    );
-  }
-  return data;
-}
-
-function formatOutput(data: unknown): string {
-  const optimized = optimizeData(data);
-  let jsonStr = JSON.stringify(optimized, null, 2);
-
-  if (jsonStr.length > 40000) {
-    jsonStr = JSON.stringify(optimized); // Fallback to minified JSON
-  }
-
-  if (jsonStr.length > 40000) {
-    const note = "\n... [Output truncated due to excessive length]";
-    jsonStr = jsonStr.substring(0, 40000 - note.length) + note;
-  }
-
-  return jsonStr;
-}
-
 const SNAPSHOT_DIR = process.env.SCMCP_SNAPSHOT_DIR || path.join(process.cwd(), ".snapshots");
 
 /** The wiki API caps page size at 50 regardless of what is requested. */
@@ -615,8 +576,10 @@ async function fetchAllPages(
 
   for (;;) {
     const response = await scwClient.get(endpoint, {
-      // The API ignores `per_page`; page size is `page[size]` and is capped at 50.
-      params: { ...params, page, "page[size]": SCW_MAX_PAGE_SIZE },
+      // `per_page` is ignored. Page size is `page[size]`, capped at 50, and a bare
+      // `page` alongside it silently voids it (PHP scalar/array conflict), so the
+      // page number must also use bracket form.
+      params: { ...params, "page[number]": page, "page[size]": SCW_MAX_PAGE_SIZE },
     });
     const pageData = response.data?.data;
     if (!Array.isArray(pageData) || pageData.length === 0) break;
@@ -890,8 +853,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         .parse(args || {});
 
       const params: Record<string, unknown> = {
-        page: page ?? 1,
-        // `per_page` is ignored by this API; page size is `page[size]`, capped at 50.
+        // Both must use bracket form: a bare `page` silently voids `page[size]`.
+        "page[number]": page ?? 1,
         "page[size]": Math.min(per_page ?? 20, SCW_MAX_PAGE_SIZE),
       };
       if (manufacturer) params["filter[manufacturer]"] = manufacturer;
@@ -902,7 +865,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       const response = await fetchWithCache(scwClient, "/vehicles", { params });
       return {
-        content: [{ type: "text", text: formatOutput(response.data) }],
+        content: [
+          { type: "text", text: formatOutput(summarizeList(response.data, summarizeVehicle)) },
+        ],
       };
     }
 
@@ -934,8 +899,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           .parse(args || {});
 
       const params: Record<string, unknown> = {
-        page: page ?? 1,
-        // `per_page` is ignored by this API; page size is `page[size]`, capped at 50.
+        // Both must use bracket form: a bare `page` silently voids `page[size]`.
+        "page[number]": page ?? 1,
         "page[size]": Math.min(per_page ?? 20, SCW_MAX_PAGE_SIZE),
       };
       if (type) params["filter[type]"] = type;
@@ -947,7 +912,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       const response = await fetchWithCache(scwClient, `/${category ?? "items"}`, { params });
       return {
-        content: [{ type: "text", text: formatOutput(response.data) }],
+        content: [
+          { type: "text", text: formatOutput(summarizeList(response.data, summarizeItem)) },
+        ],
       };
     }
 
@@ -1013,7 +980,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       });
 
       return {
-        content: [{ type: "text", text: formatOutput(result) }],
+        content: [{ type: "text", text: formatOutputRaw(result) }],
       };
     }
 
@@ -1441,45 +1408,31 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           );
         }
 
-        const inventoryFilter = inventory_type || "all";
-        const terminalInventory = terminals.map((t: Record<string, unknown>) => {
-          const inventory: Record<string, unknown> = {};
+        const inventoryFilter = inventory_type ?? "all";
+        // UEX exposes shop capability flags per terminal, not per-item stock.
+        const CAPABILITIES: { kind: string; flag: string }[] = [
+          { kind: "ships", flag: "is_shop_vehicle" },
+          { kind: "components", flag: "is_shop_vehicle" },
+          { kind: "weapons", flag: "is_shop_fps" },
+          { kind: "armor", flag: "is_shop_fps" },
+        ];
 
-          if (
-            inventoryFilter === "ships" ||
-            inventoryFilter === "all" ||
-            (t.is_shop_vehicle === 1 && inventoryFilter === "all")
-          ) {
-            if (t.is_shop_vehicle === 1) {
-              inventory.ships = "Available";
-            }
-          }
-          if (inventoryFilter === "weapons" || inventoryFilter === "all") {
-            if (t.is_shop_fps === 1) {
-              inventory.weapons = "Available";
-            }
-          }
-          if (inventoryFilter === "armor" || inventoryFilter === "all") {
-            if (t.is_shop_fps === 1) {
-              inventory.armor = "Available (with FPS items)";
-            }
-          }
-          if (inventoryFilter === "components" || inventoryFilter === "all") {
-            if (t.is_shop_vehicle === 1) {
-              inventory.components = "Available";
-            }
+        const terminalInventory = terminals.map((t: Record<string, unknown>) => {
+          const sells: string[] = [];
+          for (const { kind, flag } of CAPABILITIES) {
+            if (inventoryFilter !== "all" && inventoryFilter !== kind) continue;
+            if (t[flag] === 1) sells.push(kind);
           }
 
           return {
             terminal_id: t.id,
             terminal_name: t.nickname || t.name,
             full_name: t.fullname,
-            location: `${t.planet_name || ""}/${t.space_station_name || t.orbit_name || ""}`.replace(
-              /^\/+|\/+$/g,
-              "",
-            ),
+            location: [t.planet_name, t.space_station_name || t.orbit_name]
+              .filter(Boolean)
+              .join(" / "),
             system: t.star_system_name,
-            inventory: Object.keys(inventory).length > 0 ? inventory : "No inventory matching filter",
+            sells: sells.length > 0 ? sells : "nothing matching that filter",
             faction: t.faction_name,
             game_version: t.game_version,
           };
@@ -1496,7 +1449,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                   inventory_type: inventoryFilter,
                 },
                 results: terminalInventory,
-                note: "For specific item/ship pricing, use commodity_prices or search tools",
+                note: "These are shop capability flags, not live stock. For where a specific ship is sold, use uex_get_ship_prices.",
               }),
             },
           ],
