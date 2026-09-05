@@ -1,9 +1,28 @@
+# Secrets and credentials
 .env
-.gemini/
+.env.*
+!.env.example
 gha-creds-*.json
+*.pem
+*.key
 
+# Dependencies and build output
 node_modules/
 dist/
+*.tsbuildinfo
+coverage/
+
+# Runtime caches (regenerated on demand, ~14MB dumps)
+.build-cache/
 .snapshots/
 
-.build-cache/
+# Local scratch — never commit intermediate data
+.tmp/
+scratch/
+*.log
+
+# Editor and OS
+.gemini/
+.idea/
+.vscode/
+.DS_Store
