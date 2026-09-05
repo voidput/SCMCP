@@ -1,3 +1,10 @@
+# [1.2.0](https://github.com/voidput/SCMCP/compare/v1.1.1...v1.2.0) (2026-09-05)
+
+
+### Features
+
+* add sc_get_vocabulary, merging local gamedata with the public API ([4e465a5](https://github.com/voidput/SCMCP/commit/4e465a5de63743d8f83510cb66e7636dd62409ab))
+
 ## [1.1.1](https://github.com/voidput/SCMCP/compare/v1.1.0...v1.1.1) (2026-09-05)
 
 
