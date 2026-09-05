@@ -74,6 +74,26 @@ tools remain useful only for capturing the wiki API's enriched view (which
 carries UEX prices and shop data the raw dumps lack). Snapshots land in `.snapshots/` (gitignored); override
 with `SCMCP_SNAPSHOT_DIR`.
 
+## Locally Extracted Game Data
+
+`sc_local_datasets`, `sc_search_local` and `sc_read_local_collection` read
+`game-*.json` produced by the StarBreaker pipeline: a PowerShell extract step
+rips the DataCore/DataForge database out of the shipped game files, then a parse
+step bakes it into per-domain JSON.
+
+Set `SCMCP_GAME_DATA_DIR` to the directory holding those files. Nothing assumes a
+sibling checkout, and the tools report how to configure themselves when it is
+unset.
+
+This is the only source for mining ore signatures and spawn weights, crafting
+blueprints, reputation and mission brokers, quality bands, and Wikelo trades.
+It does **not** cover ships or ship guns, so those still come from the wiki API
+and the scunpacked history. The two sources are complementary, not redundant.
+
+Note the extraction toolkit ships its own MCP server, but that one exposes
+low-level archive internals (p4k entries, chunks, DataCore bytes) for debugging
+extraction. It is not a game-data query API and does not overlap with SCMCP.
+
 ## Not Integrated
 
 - **spviewer.eu** — has a JSON endpoint (`data.spviewer.eu/spvapi/data/v1/live`)
