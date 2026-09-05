@@ -1,3 +1,10 @@
+## [1.1.1](https://github.com/voidput/SCMCP/compare/v1.1.0...v1.1.1) (2026-09-05)
+
+
+### Bug Fixes
+
+* **ci:** build arm64 without emulation ([2c34f74](https://github.com/voidput/SCMCP/commit/2c34f7442025e940195ca1f713724d52a3865952))
+
 # [1.1.0](https://github.com/voidput/SCMCP/compare/v1.0.0...v1.1.0) (2026-09-05)
 
 
