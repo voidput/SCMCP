@@ -3,6 +3,8 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import axios, { AxiosInstance, AxiosRequestConfig } from "axios";
 import dotenv from "dotenv";
+import fs from "node:fs/promises";
+import path from "node:path";
 import { z } from "zod";
 
 dotenv.config({ quiet: true });
@@ -185,6 +187,122 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         },
       },
       {
+        name: "scw_list_vehicles",
+        description:
+          "Browse/list ships and ground vehicles from the Star Citizen Wiki. Filter by manufacturer, role (e.g. 'Medical', 'Cargo'), career, or size. Use scw_get_filters to see all valid values.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            manufacturer: {
+              type: "string",
+              description: "Optional: Manufacturer name (e.g., 'Aegis Dynamics', 'Drake Interplanetary').",
+            },
+            role: {
+              type: "string",
+              description:
+                "Optional: Ship role (e.g., 'Medical', 'Cargo', 'Heavy Fighter', 'Light Mining').",
+            },
+            career: {
+              type: "string",
+              description:
+                "Optional: Career category (e.g., 'Combat', 'Industrial', 'Support', 'Exploration').",
+            },
+            size: {
+              type: "number",
+              description: "Optional: Vehicle size class (1-6, 10).",
+            },
+            is_spaceship: {
+              type: "boolean",
+              description: "Optional: true for spaceships only, false for ground vehicles only.",
+            },
+            page: {
+              type: "number",
+              description: "Optional: Page number for pagination (default 1).",
+            },
+            per_page: {
+              type: "number",
+              description: "Optional: Results per page (default 20, max 60).",
+            },
+          },
+        },
+      },
+      {
+        name: "scw_list_items",
+        description:
+          "Browse/list weapons, armor, and ship components from the Star Citizen Wiki. Pick a category endpoint and optionally filter by type, size, grade, class, or manufacturer. Use scw_get_filters to see valid values.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            category: {
+              type: "string",
+              enum: [
+                "items",
+                "weapons",
+                "weapon-attachments",
+                "armor",
+                "clothes",
+                "food",
+                "vehicle-weapons",
+                "vehicle-items",
+              ],
+              description:
+                "Which catalog to browse. 'vehicle-items' = ship components (shields, coolers, quantum drives), 'vehicle-weapons' = ship weapons, 'weapons' = FPS weapons. Defaults to 'items' (everything).",
+            },
+            type: {
+              type: "string",
+              description:
+                "Optional: Item type (e.g., 'Shield', 'Cooler', 'Quantum Drive', 'Power Plant', 'Weapon Gun', 'Missile').",
+            },
+            sub_type: {
+              type: "string",
+              description: "Optional: Item sub-type (e.g., 'Gun', 'Manned Turret', 'Missile Rack').",
+            },
+            size: {
+              type: "number",
+              description: "Optional: Component size (0-12).",
+            },
+            grade: {
+              type: "string",
+              enum: ["A", "B", "C", "D"],
+              description: "Optional: Component grade.",
+            },
+            class: {
+              type: "string",
+              description:
+                "Optional: Component class (e.g., 'Military', 'Civilian', 'Stealth', 'Industrial', 'Competition').",
+            },
+            manufacturer: {
+              type: "string",
+              description: "Optional: Manufacturer name (e.g., 'Behring Applied Technology').",
+            },
+            page: {
+              type: "number",
+              description: "Optional: Page number for pagination (default 1).",
+            },
+            per_page: {
+              type: "number",
+              description: "Optional: Results per page (default 20, max 60).",
+            },
+          },
+        },
+      },
+      {
+        name: "scw_get_filters",
+        description:
+          "Get all valid filter names and allowed values for vehicles or items. Call this before filtering to use exact values.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            dataset: {
+              type: "string",
+              enum: ["vehicles", "items"],
+              description: "Which dataset's filters to retrieve.",
+            },
+          },
+          required: ["dataset"],
+        },
+      },
+      {
         name: "sct_search",
         description: "Search Star Citizen Tools (starcitizen.tools) for any topic.",
         inputSchema: {
@@ -214,21 +332,6 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         },
       },
       {
-        name: "scw_get_ship_vendors",
-        description:
-          "Get a list of vendors/dealers selling a specific ship with their locations and system info.",
-        inputSchema: {
-          type: "object",
-          properties: {
-            ship_name: {
-              type: "string",
-              description: "The name of the ship (e.g., 'Ursa Medivac', 'Carrack', '300i').",
-            },
-          },
-          required: ["ship_name"],
-        },
-      },
-      {
         name: "scw_search_ships_by_vendor",
         description:
           "Search for ships available at a specific vendor/location, optionally filtered by system.",
@@ -248,9 +351,76 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         },
       },
       {
+        name: "uex_get_game_versions",
+        description:
+          "Get current Star Citizen game versions (LIVE and PTU build strings) tracked by UEX Corp.",
+        inputSchema: {
+          type: "object",
+          properties: {},
+        },
+      },
+      {
+        name: "scw_snapshot_save",
+        description:
+          "Save a snapshot of current ship or item data, keyed by game version, for later patch-to-patch comparison.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            dataset: {
+              type: "string",
+              enum: ["vehicles", "items"],
+              description: "Which dataset to snapshot.",
+            },
+            label: {
+              type: "string",
+              description:
+                "Optional: Label for this snapshot (defaults to the game_version reported by the API).",
+            },
+            type: {
+              type: "string",
+              description:
+                "Optional (items only): Restrict snapshot to one item type (e.g., 'Shields', 'WeaponPersonal').",
+            },
+          },
+          required: ["dataset"],
+        },
+      },
+      {
+        name: "scw_snapshot_diff",
+        description:
+          "Compare two saved snapshots to see what changed between patches (added, removed, and changed stats).",
+        inputSchema: {
+          type: "object",
+          properties: {
+            from_label: {
+              type: "string",
+              description: "Label of the older snapshot.",
+            },
+            to_label: {
+              type: "string",
+              description: "Label of the newer snapshot. Omit to compare against current live data.",
+            },
+            dataset: {
+              type: "string",
+              enum: ["vehicles", "items"],
+              description: "Which dataset to diff.",
+            },
+          },
+          required: ["from_label", "dataset"],
+        },
+      },
+      {
+        name: "scw_snapshot_list",
+        description: "List all saved data snapshots available for patch comparison.",
+        inputSchema: {
+          type: "object",
+          properties: {},
+        },
+      },
+      {
         name: "uex_get_ship_prices",
         description:
-          "Get purchase prices for a specific ship across all vendors/terminals from UEX Corp.",
+          "Find where a ship can be bought or rented in game, with prices and terminal locations, from UEX Corp. This is the tool to answer 'where can I get ship X'.",
         inputSchema: {
           type: "object",
           properties: {
@@ -261,6 +431,10 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             star_system_name: {
               type: "string",
               description: "Optional: Filter by star system (e.g., 'Pyro', 'Stanton').",
+            },
+            include_rentals: {
+              type: "boolean",
+              description: "Include rental locations as well as purchase locations (default true).",
             },
           },
           required: ["vehicle_name"],
@@ -358,6 +532,106 @@ function formatOutput(data: unknown): string {
   }
 
   return jsonStr;
+}
+
+const SNAPSHOT_DIR = process.env.SCMCP_SNAPSHOT_DIR || path.join(process.cwd(), ".snapshots");
+
+function snapshotPath(dataset: string, label: string): string {
+  const safeLabel = label.replace(/[^a-zA-Z0-9._-]/g, "_");
+  return path.join(SNAPSHOT_DIR, `${dataset}__${safeLabel}.json`);
+}
+
+/** Fetch every page of a paginated Star Citizen Wiki collection. */
+async function fetchAllPages(
+  endpoint: string,
+  params: Record<string, unknown> = {},
+): Promise<Record<string, unknown>[]> {
+  const collected: Record<string, unknown>[] = [];
+  let page = 1;
+
+  for (;;) {
+    const response = await scwClient.get(endpoint, {
+      params: { ...params, page, per_page: 60 },
+    });
+    const pageData = response.data?.data;
+    if (!Array.isArray(pageData) || pageData.length === 0) break;
+    collected.push(...pageData);
+
+    const lastPage = response.data?.meta?.last_page;
+    if (typeof lastPage === "number" && page >= lastPage) break;
+    if (typeof lastPage !== "number" && pageData.length < 60) break;
+    page += 1;
+  }
+
+  return collected;
+}
+
+/** Reduce a full record to the identifying + stat fields worth diffing across patches. */
+function snapshotFields(entry: Record<string, unknown>): Record<string, unknown> {
+  const keep = [
+    "name",
+    "uuid",
+    "class_name",
+    "type",
+    "grade",
+    "size",
+    "mass",
+    "health",
+    "shield_hp",
+    "cargo_capacity",
+    "speed",
+    "crew",
+    "weaponry",
+    "msrp",
+    "version",
+    "game_version",
+  ];
+  const out: Record<string, unknown> = {};
+  for (const key of keep) {
+    if (key in entry) out[key] = entry[key];
+  }
+  return out;
+}
+
+async function loadSnapshot(dataset: string, label: string) {
+  const raw = await fs.readFile(snapshotPath(dataset, label), "utf-8");
+  return JSON.parse(raw) as {
+    dataset: string;
+    label: string;
+    game_version?: string;
+    captured_at: string;
+    entries: Record<string, Record<string, unknown>>;
+  };
+}
+
+/** Shallow-compare two snapshot entry maps keyed by name. */
+function diffEntries(
+  before: Record<string, Record<string, unknown>>,
+  after: Record<string, Record<string, unknown>>,
+) {
+  const added = Object.keys(after).filter((k) => !(k in before));
+  const removed = Object.keys(before).filter((k) => !(k in after));
+  const changed: Record<string, Record<string, { from: unknown; to: unknown }>> = {};
+
+  for (const key of Object.keys(after)) {
+    if (!(key in before)) continue;
+    const fieldDiffs: Record<string, { from: unknown; to: unknown }> = {};
+    const fields = new Set([...Object.keys(before[key]), ...Object.keys(after[key])]);
+
+    for (const field of fields) {
+      // game_version stamps every record and would flag everything as changed.
+      if (field === "version" || field === "game_version") continue;
+      const prev = JSON.stringify(before[key][field]);
+      const next = JSON.stringify(after[key][field]);
+      if (prev !== next) {
+        fieldDiffs[field] = { from: before[key][field], to: after[key][field] };
+      }
+    }
+
+    if (Object.keys(fieldDiffs).length > 0) changed[key] = fieldDiffs;
+  }
+
+  return { added, removed, changed };
 }
 
 const cache = new Map<string, { data: unknown; timestamp: number }>();
@@ -534,6 +808,104 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       };
     }
 
+    if (name === "scw_list_vehicles") {
+      const { manufacturer, role, career, size, is_spaceship, page, per_page } = z
+        .object({
+          manufacturer: z.string().optional(),
+          role: z.string().optional(),
+          career: z.string().optional(),
+          size: z.number().optional(),
+          is_spaceship: z.boolean().optional(),
+          page: z.number().optional(),
+          per_page: z.number().optional(),
+        })
+        .parse(args || {});
+
+      const params: Record<string, unknown> = {
+        page: page ?? 1,
+        per_page: per_page ?? 20,
+      };
+      if (manufacturer) params["filter[manufacturer]"] = manufacturer;
+      if (role) params["filter[role]"] = role;
+      if (career) params["filter[career]"] = career;
+      if (size !== undefined) params["filter[size]"] = size;
+      if (is_spaceship !== undefined) params["filter[is_spaceship]"] = is_spaceship ? "Yes" : "No";
+
+      const response = await fetchWithCache(scwClient, "/vehicles", { params });
+      return {
+        content: [{ type: "text", text: formatOutput(response.data) }],
+      };
+    }
+
+    if (name === "scw_list_items") {
+      const { category, type, sub_type, size, grade, class: itemClass, manufacturer, page, per_page } =
+        z
+          .object({
+            category: z
+              .enum([
+                "items",
+                "weapons",
+                "weapon-attachments",
+                "armor",
+                "clothes",
+                "food",
+                "vehicle-weapons",
+                "vehicle-items",
+              ])
+              .optional(),
+            type: z.string().optional(),
+            sub_type: z.string().optional(),
+            size: z.number().optional(),
+            grade: z.enum(["A", "B", "C", "D"]).optional(),
+            class: z.string().optional(),
+            manufacturer: z.string().optional(),
+            page: z.number().optional(),
+            per_page: z.number().optional(),
+          })
+          .parse(args || {});
+
+      const params: Record<string, unknown> = {
+        page: page ?? 1,
+        per_page: per_page ?? 20,
+      };
+      if (type) params["filter[type]"] = type;
+      if (sub_type) params["filter[sub_type]"] = sub_type;
+      if (size !== undefined) params["filter[size]"] = size;
+      if (grade) params["filter[grade]"] = grade;
+      if (itemClass) params["filter[class]"] = itemClass;
+      if (manufacturer) params["filter[manufacturer]"] = manufacturer;
+
+      const response = await fetchWithCache(scwClient, `/${category ?? "items"}`, { params });
+      return {
+        content: [{ type: "text", text: formatOutput(response.data) }],
+      };
+    }
+
+    if (name === "scw_get_filters") {
+      const { dataset } = z.object({ dataset: z.enum(["vehicles", "items"]) }).parse(args);
+      const response = await fetchWithCache(scwClient, `/${dataset}/filters`);
+      return {
+        content: [{ type: "text", text: formatOutput(response.data.data ?? response.data) }],
+      };
+    }
+
+    if (name === "uex_get_game_versions") {
+      const response = await fetchWithCache(uexClient, "/game_versions");
+      const versions = response.data.data ?? {};
+      // A null ptu means no PTU build is live; formatOutput strips nulls, so say it explicitly.
+      return {
+        content: [
+          {
+            type: "text",
+            text: formatOutput({
+              live: versions.live ?? "unknown",
+              ptu: versions.ptu ?? "no active PTU build",
+            }),
+          },
+        ],
+      };
+    }
+
     if (name === "sct_search") {
       const { query } = z.object({ query: z.string() }).parse(args);
       const response = await fetchWithCache(sctClient, "/api.php", {
@@ -579,74 +951,6 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       return {
         content: [{ type: "text", text: textContent || formatOutput(response.data) }],
-      };
-    }
-
-    if (name === "scw_get_ship_vendors") {
-      const { ship_name } = z.object({ ship_name: z.string() }).parse(args);
-      try {
-        // Try fetching ship details first to get vendor info
-        const shipResponse = await fetchWithCache(
-          scwClient,
-          `/vehicles/${encodeURIComponent(ship_name)}`,
-        );
-
-        let vendors: Record<string, unknown>[] = [];
-        if (shipResponse.data && isObject(shipResponse.data.data)) {
-          const shipData = shipResponse.data.data;
-          // Look for vendor info in ship data
-          if ("vendors" in shipData && Array.isArray(shipData.vendors)) {
-            vendors = shipData.vendors as Record<string, unknown>[];
-          }
-          // Also include basic ship info for reference
-          const shipInfo = {
-            ship_name: shipData.name || ship_name,
-            ship_type: shipData.type,
-            ship_manufacturer: shipData.manufacturer,
-            vendors: vendors.length > 0 ? vendors : "Vendor data not available in wiki",
-            note:
-              "For real-time vendor availability, check UEX terminals in Pyro (Ruin Station Buy and Fly, Checkmate Ship Parts, etc.) or game vendors.",
-          };
-          return {
-            content: [{ type: "text", text: formatOutput(shipInfo) }],
-          };
-        }
-      } catch {
-        // Fallback: return helpful info about checking vendors
-      }
-
-      return {
-        content: [
-          {
-            type: "text",
-            text: formatOutput({
-              query: ship_name,
-              message:
-                "Ship vendor data not found in Star Citizen Wiki. Check these locations for ships:",
-              vendors_to_check: [
-                {
-                  location: "Ruin Station",
-                  system: "Pyro",
-                  terminal: "Buy and Fly (BFRUI)",
-                  note: "Primary new ship dealer in Pyro",
-                },
-                {
-                  location: "Checkmate Station",
-                  system: "Pyro",
-                  terminal: "Ship Parts (SPCHE)",
-                  note: "Ship upgrades and components",
-                },
-                {
-                  location: "Port Tressler",
-                  system: "Stanton",
-                  terminal: "Aegis Dynamics",
-                  note: "Aegis manufacturer dealer",
-                },
-              ],
-              note: "Use uex_get_terminals to find full vendor list by system",
-            }),
-          },
-        ],
       };
     }
 
@@ -722,29 +1026,240 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       };
     }
 
-    if (name === "uex_get_ship_prices") {
-      const { vehicle_name, star_system_name } = z
+    if (name === "scw_snapshot_save") {
+      const { dataset, label, type } = z
         .object({
-          vehicle_name: z.string(),
-          star_system_name: z.string().optional(),
+          dataset: z.enum(["vehicles", "items"]),
+          label: z.string().optional(),
+          type: z.string().optional(),
         })
         .parse(args);
 
-      const response = await fetchWithCache(uexClient, "/vehicles_purchases_prices", {
-        params: { vehicle_name },
+      const params: Record<string, unknown> = {};
+      if (dataset === "items" && type) params["filter[type]"] = type;
+
+      const all = await fetchAllPages(`/${dataset}`, params);
+      if (all.length === 0) {
+        throw new Error(`No ${dataset} returned by the API — nothing to snapshot.`);
+      }
+
+      const gameVersion =
+        (all[0].version as string) || (all[0].game_version as string) || "unknown";
+      const resolvedLabel = label || gameVersion;
+
+      const entries: Record<string, Record<string, unknown>> = {};
+      for (const entry of all) {
+        const key = (entry.name as string) || (entry.uuid as string);
+        if (key) entries[key] = snapshotFields(entry);
+      }
+
+      await fs.mkdir(SNAPSHOT_DIR, { recursive: true });
+      await fs.writeFile(
+        snapshotPath(dataset, resolvedLabel),
+        JSON.stringify(
+          {
+            dataset,
+            label: resolvedLabel,
+            game_version: gameVersion,
+            captured_at: new Date().toISOString(),
+            entries,
+          },
+          null,
+          2,
+        ),
+      );
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: formatOutput({
+              saved: snapshotPath(dataset, resolvedLabel),
+              dataset,
+              label: resolvedLabel,
+              game_version: gameVersion,
+              entry_count: Object.keys(entries).length,
+            }),
+          },
+        ],
+      };
+    }
+
+    if (name === "scw_snapshot_list") {
+      let files: string[] = [];
+      try {
+        files = await fs.readdir(SNAPSHOT_DIR);
+      } catch {
+        return {
+          content: [
+            {
+              type: "text",
+              text: formatOutput({
+                snapshot_dir: SNAPSHOT_DIR,
+                snapshots: [],
+                note: "No snapshots saved yet. Use scw_snapshot_save to capture one.",
+              }),
+            },
+          ],
+        };
+      }
+
+      const snapshots = [];
+      for (const file of files.filter((f) => f.endsWith(".json"))) {
+        try {
+          const raw = JSON.parse(await fs.readFile(path.join(SNAPSHOT_DIR, file), "utf-8"));
+          snapshots.push({
+            dataset: raw.dataset,
+            label: raw.label,
+            game_version: raw.game_version,
+            captured_at: raw.captured_at,
+            entry_count: Object.keys(raw.entries || {}).length,
+          });
+        } catch {
+          continue;
+        }
+      }
+
+      return {
+        content: [{ type: "text", text: formatOutput({ snapshot_dir: SNAPSHOT_DIR, snapshots }) }],
+      };
+    }
+
+    if (name === "scw_snapshot_diff") {
+      const { from_label, to_label, dataset } = z
+        .object({
+          from_label: z.string(),
+          to_label: z.string().optional(),
+          dataset: z.enum(["vehicles", "items"]),
+        })
+        .parse(args);
+
+      const fromSnap = await loadSnapshot(dataset, from_label);
+
+      let toEntries: Record<string, Record<string, unknown>>;
+      let toDescription: string;
+
+      if (to_label) {
+        const toSnap = await loadSnapshot(dataset, to_label);
+        toEntries = toSnap.entries;
+        toDescription = `${toSnap.label} (${toSnap.game_version})`;
+      } else {
+        const all = await fetchAllPages(`/${dataset}`);
+        toEntries = {};
+        for (const entry of all) {
+          const key = (entry.name as string) || (entry.uuid as string);
+          if (key) toEntries[key] = snapshotFields(entry);
+        }
+        const liveVersion =
+          all.length > 0 ? (all[0].version as string) || (all[0].game_version as string) : "unknown";
+        toDescription = `current live data (${liveVersion})`;
+      }
+
+      const { added, removed, changed } = diffEntries(fromSnap.entries, toEntries);
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: formatOutput({
+              dataset,
+              from: `${fromSnap.label} (${fromSnap.game_version})`,
+              to: toDescription,
+              summary: {
+                added: added.length,
+                removed: removed.length,
+                changed: Object.keys(changed).length,
+              },
+              added,
+              removed,
+              changed,
+            }),
+          },
+        ],
+      };
+    }
+
+    if (name === "uex_get_ship_prices") {
+      const { vehicle_name, star_system_name, include_rentals } = z
+        .object({
+          vehicle_name: z.string(),
+          star_system_name: z.string().optional(),
+          include_rentals: z.boolean().optional(),
+        })
+        .parse(args);
+
+      // The price endpoints only filter by id_vehicle; vehicle_name is ignored server-side.
+      const vehiclesResponse = await fetchWithCache(uexClient, "/vehicles");
+      const vehicles: Record<string, unknown>[] = vehiclesResponse.data.data ?? [];
+      const needle = vehicle_name.toLowerCase();
+
+      const matches = vehicles.filter((v) => {
+        const full = typeof v.name_full === "string" ? v.name_full.toLowerCase() : "";
+        const short = typeof v.name === "string" ? v.name.toLowerCase() : "";
+        return full === needle || short === needle || full.includes(needle) || short.includes(needle);
       });
 
-      let data = response.data.data;
-      if (Array.isArray(data) && star_system_name) {
-        data = data.filter(
+      if (matches.length === 0) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: formatOutput({
+                query: vehicle_name,
+                error: "No vehicle matched that name in the UEX vehicle list.",
+              }),
+            },
+          ],
+        };
+      }
+
+      const exact = matches.find(
+        (v) =>
+          (typeof v.name_full === "string" && v.name_full.toLowerCase() === needle) ||
+          (typeof v.name === "string" && v.name.toLowerCase() === needle),
+      );
+      const vehicle = exact ?? matches[0];
+
+      const filterSystem = (rows: unknown) => {
+        if (!Array.isArray(rows)) return [];
+        if (!star_system_name) return rows;
+        return rows.filter(
           (d: Record<string, unknown>) =>
             typeof d.star_system_name === "string" &&
             d.star_system_name.toLowerCase() === star_system_name.toLowerCase(),
         );
+      };
+
+      const purchaseResponse = await fetchWithCache(uexClient, "/vehicles_purchases_prices", {
+        params: { id_vehicle: vehicle.id },
+      });
+      const purchases = filterSystem(purchaseResponse.data.data);
+
+      let rentals: unknown[] = [];
+      if (include_rentals !== false) {
+        const rentalResponse = await fetchWithCache(uexClient, "/vehicles_rentals_prices", {
+          params: { id_vehicle: vehicle.id },
+        });
+        rentals = filterSystem(rentalResponse.data.data);
       }
 
       return {
-        content: [{ type: "text", text: formatOutput(data) }],
+        content: [
+          {
+            type: "text",
+            text: formatOutput({
+              vehicle: vehicle.name_full ?? vehicle.name,
+              id_vehicle: vehicle.id,
+              system_filter: star_system_name ?? "all systems",
+              other_matches:
+                matches.length > 1
+                  ? matches.filter((m) => m.id !== vehicle.id).map((m) => m.name_full ?? m.name)
+                  : undefined,
+              purchase_locations: purchases,
+              rental_locations: rentals,
+            }),
+          },
+        ],
       };
     }
 
