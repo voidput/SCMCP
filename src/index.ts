@@ -6,6 +6,14 @@ import dotenv from "dotenv";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
+import {
+  DATASETS,
+  type DatasetName,
+  diffDatasets,
+  fetchDataset,
+  listBuilds,
+  resolveBuild,
+} from "./versions.js";
 
 dotenv.config({ quiet: true });
 
@@ -348,6 +356,59 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             },
           },
           required: ["vendor_name"],
+        },
+      },
+      {
+        name: "sc_list_builds",
+        description:
+          "List the game builds (patch versions) for which historical data dumps exist, newest first. Use this to discover which versions can be compared.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            dataset: {
+              type: "string",
+              enum: ["ships", "ship-items", "items", "fps-items"],
+              description: "Which dataset to list builds for (default 'ship-items').",
+            },
+            limit: {
+              type: "number",
+              description: "How many builds to return (default 40, max 100).",
+            },
+          },
+        },
+      },
+      {
+        name: "sc_diff_versions",
+        description:
+          "Compare game data between any two patch versions. Reports what was added, removed, and changed. Pass item_name to get every changed field for one ship/weapon/component, otherwise returns a summary with the most-changed entries. This is the tool for questions like 'what changed for X between 4.9 and 4.10'.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            dataset: {
+              type: "string",
+              enum: ["ships", "ship-items", "items", "fps-items"],
+              description:
+                "Which dataset to diff. 'ship-items' covers ship weapons, shields, coolers, power plants, quantum drives and radars.",
+            },
+            from_version: {
+              type: "string",
+              description: "Older version, e.g. '4.9' or a full build string like '4.9.0-LIVE.12344265'.",
+            },
+            to_version: {
+              type: "string",
+              description: "Newer version, e.g. '4.10'.",
+            },
+            item_name: {
+              type: "string",
+              description:
+                "Optional: restrict to entries matching this name or class name (e.g. 'AD5B', 'Mantis', 'Talon'). Returns field-level changes.",
+            },
+            limit: {
+              type: "number",
+              description: "Max entries listed per category in summary mode (default 50).",
+            },
+          },
+          required: ["dataset", "from_version", "to_version"],
         },
       },
       {
@@ -895,6 +956,64 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const response = await fetchWithCache(scwClient, `/${dataset}/filters`);
       return {
         content: [{ type: "text", text: formatOutput(response.data.data ?? response.data) }],
+      };
+    }
+
+    if (name === "sc_list_builds") {
+      const { dataset, limit } = z
+        .object({
+          dataset: z.enum(["ships", "ship-items", "items", "fps-items"]).optional(),
+          limit: z.number().optional(),
+        })
+        .parse(args || {});
+
+      const ds = (dataset ?? "ship-items") as DatasetName;
+      const builds = await listBuilds(ds, limit ?? 40);
+      return {
+        content: [
+          {
+            type: "text",
+            text: formatOutput({ dataset: ds, file: DATASETS[ds], builds }),
+          },
+        ],
+      };
+    }
+
+    if (name === "sc_diff_versions") {
+      const { dataset, from_version, to_version, item_name, limit } = z
+        .object({
+          dataset: z.enum(["ships", "ship-items", "items", "fps-items"]),
+          from_version: z.string(),
+          to_version: z.string(),
+          item_name: z.string().optional(),
+          limit: z.number().optional(),
+        })
+        .parse(args);
+
+      const ds = dataset as DatasetName;
+      const [fromBuild, toBuild] = await Promise.all([
+        resolveBuild(ds, from_version),
+        resolveBuild(ds, to_version),
+      ]);
+
+      if (fromBuild.sha === toBuild.sha) {
+        throw new Error(
+          `"${from_version}" and "${to_version}" both resolve to build ${fromBuild.version}.`,
+        );
+      }
+
+      const [beforeEntries, afterEntries] = await Promise.all([
+        fetchDataset(ds, fromBuild),
+        fetchDataset(ds, toBuild),
+      ]);
+
+      const result = diffDatasets(ds, fromBuild, toBuild, beforeEntries, afterEntries, {
+        itemQuery: item_name,
+        limit,
+      });
+
+      return {
+        content: [{ type: "text", text: formatOutput(result) }],
       };
     }
 

@@ -5,3 +5,5 @@ gha-creds-*.json
 node_modules/
 dist/
 .snapshots/
+
+.build-cache/

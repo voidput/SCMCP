@@ -43,14 +43,35 @@ These cost real debugging time. Do not re-derive them.
   from `game_versions`, meaning no PTU build is live) must be mapped to explicit
   text before formatting or the signal disappears.
 
+## Comparing Patch Versions
+
+`sc_list_builds` and `sc_diff_versions` compare any two patches. They read
+StarCitizenWiki/scunpacked-data, which commits a full game data dump per build
+with the build string as the commit message. That git history is the only source
+found that serves data for a *past* patch — the wiki API and UEX both expose
+only the build they are currently synced to.
+
+Datasets: `ships`, `ship-items` (ship weapons, shields, coolers, power plants,
+quantum drives, radars), `items`, `fps-items`. Dumps are ~14MB and immutable per
+commit, so they cache to `.build-cache/` (override with `SCMCP_BUILD_CACHE_DIR`).
+Set `GITHUB_TOKEN` to avoid GitHub rate limits.
+
+Records are keyed by `className`, which is stable across patches; display names
+are not. Note ships.json uses `ClassName` (capitalised) while ship-items.json
+uses `className`.
+
+Without `item_name` a whole-dataset diff returns counts plus the most-changed
+entries, because a full field-level diff runs to thousands of entries. Pass
+`item_name` for field-level detail on one thing.
+
 ## PTU vs LIVE
 
 `uex_get_game_versions` reports both build strings; `ptu` is null when no PTU
 build is up. Neither API serves PTU *data* on request — the wiki API stamps
 records with the build it synced (`game_version`) but exposes no environment
-selector. So patch comparison works by snapshot: `scw_snapshot_save` captures a
-dataset keyed by version, `scw_snapshot_diff` compares two snapshots (or one
-against current live). Snapshots land in `.snapshots/` (gitignored); override
+selector. For comparing patches prefer `sc_diff_versions` above. The `scw_snapshot_*`
+tools remain useful only for capturing the wiki API's enriched view (which
+carries UEX prices and shop data the raw dumps lack). Snapshots land in `.snapshots/` (gitignored); override
 with `SCMCP_SNAPSHOT_DIR`.
 
 ## Not Integrated
