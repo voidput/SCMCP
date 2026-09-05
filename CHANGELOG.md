@@ -1,3 +1,22 @@
+# [1.1.0](https://github.com/voidput/SCMCP/compare/v1.0.0...v1.1.0) (2026-09-05)
+
+
+### Bug Fixes
+
+* make tool output parseable, and add tests that catch why it was not ([f3fdcf8](https://github.com/voidput/SCMCP/commit/f3fdcf836cfb59c9498b3433f330d17c15ad6782))
+* **security:** clear dependency advisories and harden the image ([aecdcbf](https://github.com/voidput/SCMCP/commit/aecdcbfb11252a4bdc85824a8b3d38cbd0368bcb))
+* use page[size] for wiki pagination, which ignores per_page ([1d654a2](https://github.com/voidput/SCMCP/commit/1d654a2a673189cb64ed2da137452bdbea65c0d4))
+
+
+### Features
+
+* add ship pricing/comparison tools and model-routing policy ([b91567f](https://github.com/voidput/SCMCP/commit/b91567f98736fc7f19005c5f344c0301fc1a5a42))
+* add ship vendor lookup and terminal inventory tools ([5b43c9e](https://github.com/voidput/SCMCP/commit/5b43c9e5485b402ca4d270f762d7b6ea578c2e4a))
+* add ship/weapon/component browsing and patch snapshot diffing ([33de79b](https://github.com/voidput/SCMCP/commit/33de79b6b158e73867870a7ae2b4ef040d0784fc))
+* compare game data between any two patch versions ([e9e5edb](https://github.com/voidput/SCMCP/commit/e9e5edb67a5a79191e1f0329065f34dd5a119f67))
+* read locally extracted game data for domains no API exposes ([46d3557](https://github.com/voidput/SCMCP/commit/46d3557f4d5d92e338d0defed4e8271c4c8b65de))
+* read patch history from our own dump repo ([96ab167](https://github.com/voidput/SCMCP/commit/96ab1675f018c5bd91f0451e1ed4e3705cf8459f))
+
 # 1.0.0 (2026-04-07)
 
 
