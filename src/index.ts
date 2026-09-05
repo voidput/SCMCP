@@ -16,6 +16,7 @@ import {
   summarizeVehicle,
 } from "./format.js";
 import { listDatasets, readCollection, searchDataset } from "./localdata.js";
+import { USER_AGENT, VERSION } from "./useragent.js";
 import {
   DATASETS,
   type DatasetName,
@@ -39,21 +40,24 @@ const uexClient = axios.create({
   baseURL: UEX_BASE_URL,
   headers: {
     Authorization: `Bearer ${UEX_API_KEY}`,
+    "User-Agent": USER_AGENT,
   },
 });
 
 const scwClient = axios.create({
   baseURL: SCW_BASE_URL,
+  headers: { "User-Agent": USER_AGENT },
 });
 
 const sctClient = axios.create({
   baseURL: "https://starcitizen.tools",
+  headers: { "User-Agent": USER_AGENT },
 });
 
 const server = new Server(
   {
     name: "star-citizen-mcp",
-    version: "1.0.0",
+    version: VERSION,
   },
   {
     capabilities: {
@@ -423,11 +427,6 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         inputSchema: {
           type: "object",
           properties: {
-            dataset: {
-              type: "string",
-              enum: ["ships", "ship-items", "items", "fps-items"],
-              description: "Which dataset to list builds for (default 'ship-items').",
-            },
             limit: {
               type: "number",
               description: "How many builds to return (default 40, max 100).",
@@ -444,9 +443,9 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
           properties: {
             dataset: {
               type: "string",
-              enum: ["ships", "ship-items", "items", "fps-items"],
+              enum: ["ships", "ship-components", "fps-weapons", "ammo", "mining", "mining-spawns", "blueprints", "missions", "reputation", "containers", "starmap", "manufacturers", "wikelo-trades", "strings"],
               description:
-                "Which dataset to diff. 'ship-items' covers ship weapons, shields, coolers, power plants, quantum drives and radars.",
+                "Which dataset to diff. 'ship-components' covers ship weapons, shields, coolers, power plants, quantum drives and radars; 'strings' is the localisation table, useful for spotting renamed or newly added content.",
             },
             from_version: {
               type: "string",
@@ -455,6 +454,11 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             to_version: {
               type: "string",
               description: "Newer version, e.g. '4.10'.",
+            },
+            collection: {
+              type: "string",
+              description:
+                "Optional: which collection inside the dataset to diff. Defaults to the main one (e.g. 'weapons' for ship-components); pass 'shields', 'quantumDrives', 'radars' or 'missiles' to diff those instead.",
             },
             item_name: {
               type: "string",
@@ -1006,31 +1010,30 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     }
 
     if (name === "sc_list_builds") {
-      const { dataset, limit } = z
+      const { limit } = z
         .object({
-          dataset: z.enum(["ships", "ship-items", "items", "fps-items"]).optional(),
           limit: z.number().optional(),
         })
         .parse(args || {});
 
-      const ds = (dataset ?? "ship-items") as DatasetName;
-      const builds = await listBuilds(ds, limit ?? 40);
+      const builds = await listBuilds(limit ?? 40);
       return {
         content: [
           {
             type: "text",
-            text: formatOutput({ dataset: ds, file: DATASETS[ds], builds }),
+            text: formatOutput({ datasets: Object.keys(DATASETS), builds }),
           },
         ],
       };
     }
 
     if (name === "sc_diff_versions") {
-      const { dataset, from_version, to_version, item_name, limit } = z
+      const { dataset, from_version, to_version, collection, item_name, limit } = z
         .object({
-          dataset: z.enum(["ships", "ship-items", "items", "fps-items"]),
+          dataset: z.enum(["ships", "ship-components", "fps-weapons", "ammo", "mining", "mining-spawns", "blueprints", "missions", "reputation", "containers", "starmap", "manufacturers", "wikelo-trades", "strings"]),
           from_version: z.string(),
           to_version: z.string(),
+          collection: z.string().optional(),
           item_name: z.string().optional(),
           limit: z.number().optional(),
         })
@@ -1038,8 +1041,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       const ds = dataset as DatasetName;
       const [fromBuild, toBuild] = await Promise.all([
-        resolveBuild(ds, from_version),
-        resolveBuild(ds, to_version),
+        resolveBuild(from_version),
+        resolveBuild(to_version),
       ]);
 
       if (fromBuild.sha === toBuild.sha) {
@@ -1049,8 +1052,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
 
       const [beforeEntries, afterEntries] = await Promise.all([
-        fetchDataset(ds, fromBuild),
-        fetchDataset(ds, toBuild),
+        fetchDataset(ds, fromBuild, collection),
+        fetchDataset(ds, toBuild, collection),
       ]);
 
       const result = diffDatasets(ds, fromBuild, toBuild, beforeEntries, afterEntries, {

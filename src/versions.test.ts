@@ -1,5 +1,14 @@
 import { describe, it, expect } from "vitest";
-import { diffDatasets, diffEntry, type Build } from "./versions.js";
+import {
+  describeFetchFailure,
+  diffDatasets,
+  diffEntry,
+  type Build,
+  type Entry,
+} from "./versions.js";
+
+/** Dumps arrive as [key, record] pairs; array collections key on their index. */
+const rows = (records: unknown[]): Entry[] => records.map((r, i) => [String(i), r]);
 
 const FROM: Build = { version: "4.9.0-LIVE.12344265", sha: "db00b74983", date: "2026-08-20" };
 const TO: Build = { version: "4.10.0-LIVE.12519617", sha: "f6a2b29e77", date: "2026-08-27" };
@@ -41,7 +50,7 @@ describe("diffDatasets", () => {
   ];
 
   it("summarises adds, removes and changes across a whole dataset", () => {
-    const result = diffDatasets("ship-items", FROM, TO, before, after);
+    const result = diffDatasets("ship-components", FROM, TO, rows(before), rows(after));
     expect(result.summary).toEqual({ added: 1, removed: 1, changed: 1, unchanged: 1 });
     expect(result.added?.[0]).toContain("New Gun");
     expect(result.removed?.[0]).toContain("Removed Gun");
@@ -49,26 +58,26 @@ describe("diffDatasets", () => {
   });
 
   it("gives field-level detail when scoped to one item", () => {
-    const result = diffDatasets("ship-items", FROM, TO, before, after, { itemQuery: "Mantis" });
+    const result = diffDatasets("ship-components", FROM, TO, rows(before), rows(after), { itemQuery: "Mantis" });
     expect(result.summary.changed).toBe(1);
     expect(result.changed?.[0].changes).toEqual([{ field: "dps", from: 506.7, to: 853.3 }]);
   });
 
   it("reports zero changes for an item that was not touched", () => {
-    const result = diffDatasets("ship-items", FROM, TO, before, after, { itemQuery: "Unchanged" });
+    const result = diffDatasets("ship-components", FROM, TO, rows(before), rows(after), { itemQuery: "Unchanged" });
     expect(result.summary.changed).toBe(0);
     expect(result.summary.unchanged).toBe(1);
     expect(result.changed).toBeUndefined();
   });
 
   it("matches on class name as well as display name", () => {
-    const result = diffDatasets("ship-items", FROM, TO, before, after, { itemQuery: "GETS_BUFF" });
+    const result = diffDatasets("ship-components", FROM, TO, rows(before), rows(after), { itemQuery: "GETS_BUFF" });
     expect(result.summary.changed).toBe(1);
   });
 
   it("throws when the item matches nothing in either build", () => {
     expect(() =>
-      diffDatasets("ship-items", FROM, TO, before, after, { itemQuery: "Nonexistent" }),
+      diffDatasets("ship-components", FROM, TO, rows(before), rows(after), { itemQuery: "Nonexistent" }),
     ).toThrow(/No entry/);
   });
 
@@ -77,10 +86,33 @@ describe("diffDatasets", () => {
       className: `NEW_${i}`,
       name: `Gun ${i}`,
     }));
-    const result = diffDatasets("ship-items", FROM, TO, [], many, { limit: 10 });
+    const result = diffDatasets("ship-components", FROM, TO, [], rows(many), { limit: 10 });
     expect(result.summary.added).toBe(120);
     expect(result.added).toHaveLength(10);
     expect(result.truncated).toMatch(/capped at 10 of 120/);
+  });
+
+  it("keys object collections on their own key when records carry no class name", () => {
+    // game-strings-english.json is a flat id -> text map: identity is the key.
+    const beforeStrings: Entry[] = [
+      ["item_Name_Gatling", "Gatling"],
+      ["item_Desc_Gatling", "A gun."],
+    ];
+    const afterStrings: Entry[] = [
+      ["item_Name_Gatling", "Gatling Mk II"],
+      ["item_Desc_Gatling", "A gun."],
+    ];
+    const result = diffDatasets("strings", FROM, TO, beforeStrings, afterStrings);
+    expect(result.summary).toEqual({ added: 0, removed: 0, changed: 1, unchanged: 1 });
+    expect(result.changed?.[0].item).toBe("item_Name_Gatling");
+  });
+
+  it("prefers a stable record name over the display name for identity", () => {
+    // A rename must read as one changed record, never as an add plus a remove.
+    const before: Entry[] = [["0", { recordName: "AEGS_Gladius", name: "Gladius" }]];
+    const after: Entry[] = [["0", { recordName: "AEGS_Gladius", name: "Gladius Valiant" }]];
+    const result = diffDatasets("ships", FROM, TO, before, after);
+    expect(result.summary).toEqual({ added: 0, removed: 0, changed: 1, unchanged: 0 });
   });
 
   it("orders changed entries by how much moved", () => {
@@ -92,8 +124,26 @@ describe("diffDatasets", () => {
       { className: "SMALL", name: "Small", x: 2 },
       { className: "BIG", name: "Big", x: 9, y: 9, z: 9 },
     ];
-    const result = diffDatasets("ship-items", FROM, TO, a, b);
+    const result = diffDatasets("ship-components", FROM, TO, rows(a), rows(b));
     expect(result.changed?.[0].item).toContain("Big");
     expect(result.changed?.[0].change_count).toBe(3);
+  });
+});
+
+describe("describeFetchFailure", () => {
+  it("explains a missing data repo without blaming SCMCP", () => {
+    const message = describeFetchFailure(404, "the build list");
+    expect(message).toMatch(/Patch history is unavailable/);
+    expect(message).toMatch(/SCMCP_DATA_REPO/);
+    expect(message).toMatch(/non-historical tool is unaffected/);
+  });
+
+  it("points at the token when GitHub rate-limits", () => {
+    expect(describeFetchFailure(403, "the build list")).toMatch(/GITHUB_TOKEN/);
+    expect(describeFetchFailure(429, "the build list")).toMatch(/GITHUB_TOKEN/);
+  });
+
+  it("still says something useful for an unknown failure", () => {
+    expect(describeFetchFailure(undefined, "game-ships.json")).toMatch(/Could not read game-ships.json/);
   });
 });

@@ -45,20 +45,30 @@ These cost real debugging time. Do not re-derive them.
 
 ## Comparing Patch Versions
 
-`sc_list_builds` and `sc_diff_versions` compare any two patches. They read
-StarCitizenWiki/scunpacked-data, which commits a full game data dump per build
-with the build string as the commit message. That git history is the only source
-found that serves data for a *past* patch — the wiki API and UEX both expose
-only the build they are currently synced to.
+`sc_list_builds` and `sc_diff_versions` compare any two patches. They read a
+data repo (`SCMCP_DATA_REPO`, default `voidput/sc-gamedata-dumps`) that commits
+one `data/game-*.json` dump per game build and tags that commit with the build
+string. The tag list is the patch history, and it is the only source that serves
+data for a *past* patch — the wiki API and UEX both expose only the build they
+are currently synced to.
 
-Datasets: `ships`, `ship-items` (ship weapons, shields, coolers, power plants,
-quantum drives, radars), `items`, `fps-items`. Dumps are ~14MB and immutable per
-commit, so they cache to `.build-cache/` (override with `SCMCP_BUILD_CACHE_DIR`).
-Set `GITHUB_TOKEN` to avoid GitHub rate limits.
+Same pipeline as `SCMCP_GAME_DATA_DIR`, so a domain readable offline diffs here
+with identical field names. Datasets: `ships`, `ship-components`, `fps-weapons`,
+`ammo`, `mining`, `mining-spawns`, `blueprints`, `missions`, `reputation`,
+`containers`, `starmap`, `manufacturers`, `wikelo-trades`, `strings`.
 
-Records are keyed by `className`, which is stable across patches; display names
-are not. Note ships.json uses `ClassName` (capitalised) while ship-items.json
-uses `className`.
+Each dump is an envelope (`_source`, `_extracted`, `_build`) wrapping named
+collections, not a bare array. Every dataset declares the collection to diff by
+default; pass `collection` to diff another (`shields`, `quantumDrives`, `radars`
+and `missiles` all live in `ship-components`). The `by*` keys are derived
+indexes over the same records — diffing one double-counts.
+
+Records are identified by `className`/`recordName` where they carry one, and by
+their own object key where they do not (`strings` is a flat id -> text map).
+Display names are not stable across patches and are never the identity.
+
+Dumps are immutable per tag, so they cache to `.build-cache/` (override with
+`SCMCP_BUILD_CACHE_DIR`). Set `GITHUB_TOKEN` to avoid GitHub rate limits.
 
 Without `item_name` a whole-dataset diff returns counts plus the most-changed
 entries, because a full field-level diff runs to thousands of entries. Pass
@@ -87,8 +97,10 @@ unset.
 
 This is the only source for mining ore signatures and spawn weights, crafting
 blueprints, reputation and mission brokers, quality bands, and Wikelo trades.
-It does **not** cover ships or ship guns, so those still come from the wiki API
-and the scunpacked history. The two sources are complementary, not redundant.
+It covers ships and guns too, but carries no prices or shop locations — those
+are UEX and wiki API territory. Same files the tagged dump history serves, so
+this is the offline read of the build you have installed; `sc_diff_versions` is
+the read across builds. The sources are complementary, not redundant.
 
 Note the extraction toolkit ships its own MCP server, but that one exposes
 low-level archive internals (p4k entries, chunks, DataCore bytes) for debugging

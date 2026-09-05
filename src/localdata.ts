@@ -19,7 +19,7 @@ import path from "node:path";
 export const GAME_DATA_DIR = process.env.SCMCP_GAME_DATA_DIR;
 
 /** Keys the parser adds for provenance rather than as game content. */
-const META_KEYS = new Set(["_source", "_extracted", "_extraction-validation"]);
+const META_KEYS = new Set(["_source", "_extracted", "_build", "_extraction-validation"]);
 
 export interface DatasetSummary {
   dataset: string;
