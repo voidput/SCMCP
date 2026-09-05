@@ -42,6 +42,11 @@ These cost real debugging time. Do not re-derive them.
 - **`formatOutput` strips nulls and zeros.** A meaningful null (like `ptu: null`
   from `game_versions`, meaning no PTU build is live) must be mapped to explicit
   text before formatting or the signal disappears.
+- **`marketplace_listings` caps at 100 rows** unless both `id_item` and
+  `operation` are passed together, which unlocks a 1,000-row cap. No free-text
+  search param exists server-side — `uex_search_marketplace` filters
+  title/description client-side over whatever page the API returns, so a broad
+  query without `id_item` only searches the first 100 active listings.
 
 ## Comparing Patch Versions
 

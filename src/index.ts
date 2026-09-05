@@ -165,6 +165,46 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         },
       },
       {
+        name: "uex_search_marketplace",
+        description:
+          "Search the UEX Corp player marketplace (player-to-player buy/sell/service ads, not shop prices). " +
+          "Matches query text against listing title/description. The API caps results at 100 unless " +
+          "id_item + operation are both given, which unlocks 1,000; for a broad text search only the " +
+          "first 100 active listings are visible to filter over.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            query: {
+              type: "string",
+              description: "Text to match against listing title/description (case-insensitive).",
+            },
+            operation: {
+              type: "string",
+              enum: ["buy", "sell"],
+              description: "Optional: filter by transaction type.",
+            },
+            type: {
+              type: "string",
+              enum: ["item", "service", "contract"],
+              description: "Optional: filter by ad type.",
+            },
+            id_item: {
+              type: "number",
+              description:
+                "Optional: filter by UEX item id. Combine with operation to unlock the 1,000-row cap.",
+            },
+            username: {
+              type: "string",
+              description: "Optional: filter by advertiser in-game name.",
+            },
+            limit: {
+              type: "number",
+              description: "Optional: max listings to return (default 25).",
+            },
+          },
+        },
+      },
+      {
         name: "scw_search",
         description: "Search the Star Citizen Wiki for any item, ship, or lore topic.",
         inputSchema: {
@@ -876,6 +916,44 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const response = await fetchWithCache(uexClient, "/commodities_ranking");
       return {
         content: [{ type: "text", text: formatOutput(response.data.data) }],
+      };
+    }
+
+    if (name === "uex_search_marketplace") {
+      const { query, operation, type, id_item, username, limit } = z
+        .object({
+          query: z.string().optional(),
+          operation: z.enum(["buy", "sell"]).optional(),
+          type: z.enum(["item", "service", "contract"]).optional(),
+          id_item: z.number().optional(),
+          username: z.string().optional(),
+          limit: z.number().optional(),
+        })
+        .parse(args || {});
+
+      const response = await fetchWithCache(uexClient, "/marketplace_listings", {
+        params: { id_item, operation, username },
+      });
+
+      let data = response.data.data;
+      if (Array.isArray(data)) {
+        if (query) {
+          const needle = query.toLowerCase();
+          data = data.filter((d: Record<string, unknown>) => {
+            const title = typeof d.title === "string" ? d.title.toLowerCase() : "";
+            const description =
+              typeof d.description === "string" ? d.description.toLowerCase() : "";
+            return title.includes(needle) || description.includes(needle);
+          });
+        }
+        if (type) {
+          data = data.filter((d: Record<string, unknown>) => d.type === type);
+        }
+        data = data.slice(0, limit ?? 25);
+      }
+
+      return {
+        content: [{ type: "text", text: formatOutput(data) }],
       };
     }
 
