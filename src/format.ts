@@ -43,14 +43,14 @@ export const MAX_OUTPUT_CHARS = 40000;
  * parse anything at all, so oversized list payloads drop whole entries and say
  * how many were dropped.
  */
-export function formatOutput(data: unknown): string {
+export function formatOutput(data: unknown, maxChars: number = MAX_OUTPUT_CHARS): string {
   const optimized = optimizeData(data);
 
   const pretty = JSON.stringify(optimized, null, 2);
-  if (pretty.length <= MAX_OUTPUT_CHARS) return pretty;
+  if (pretty.length <= maxChars) return pretty;
 
   const minified = JSON.stringify(optimized);
-  if (minified.length <= MAX_OUTPUT_CHARS) return minified;
+  if (minified.length <= maxChars) return minified;
 
   // Find the longest array in the payload and shrink it until it fits.
   const container = optimized as Record<string, unknown>;
@@ -73,7 +73,7 @@ export function formatOutput(data: unknown): string {
           truncated: `showing ${keep} of ${full.length}; narrow the query or request fewer results`,
         };
         const text = JSON.stringify(candidate, null, 2);
-        if (text.length <= MAX_OUTPUT_CHARS) return text;
+        if (text.length <= maxChars) return text;
       }
     }
   }
@@ -83,7 +83,7 @@ export function formatOutput(data: unknown): string {
     {
       error: "Result too large to return.",
       size_chars: minified.length,
-      limit_chars: MAX_OUTPUT_CHARS,
+      limit_chars: maxChars,
       hint: "Request a single record by name, or use a more specific filter.",
     },
     null,

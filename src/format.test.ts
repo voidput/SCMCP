@@ -56,6 +56,25 @@ describe("formatOutput size handling", () => {
     expect(parsed.truncated).toMatch(/showing \d+ of 40/);
   });
 
+  it("respects a caller-supplied maxChars instead of always truncating at 40k", () => {
+    // The bug this guards: sc_get_vocabulary's response carries term_count computed
+    // before truncation and a terms array truncated after it, so a caller trusting
+    // term_count silently got fewer terms than it said - 658 delivered, 2633 claimed.
+    // Completeness is the entire point of that tool, so it needs a real ceiling above
+    // the browsing-tool default, not silent data loss.
+    const terms = Array.from({ length: 2633 }, (_, i) => `Weapon Attachment Item Name ${i}`);
+    const payload = { term_count: terms.length, terms };
+
+    const default_ = formatOutput(payload);
+    expect(JSON.parse(default_).terms.length).toBeLessThan(terms.length);
+
+    const raised = formatOutput(payload, 200_000);
+    const parsedRaised = JSON.parse(raised);
+    expect(parsedRaised.terms.length).toBe(terms.length);
+    expect(parsedRaised.term_count).toBe(parsedRaised.terms.length);
+    expect(parsedRaised.truncated).toBeUndefined();
+  });
+
   it("reports an error rather than truncating a single oversized record", () => {
     const out = formatOutput({ data: [bulkyVehicle("OnlyOne")] });
     expect(() => JSON.parse(out)).not.toThrow();

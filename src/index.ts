@@ -1232,12 +1232,20 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         content: [
           {
             type: "text",
-            text: formatOutput({
-              term_count: sorted.length,
-              sources,
-              local_data_configured: Boolean(GAME_DATA_DIR),
-              terms: sorted,
-            }),
+            // The default 40k-char cap is sized for browsing tools ("show a preview,
+            // narrow your query") - here completeness is the entire point, and a
+            // silent partial list is actively wrong for what this is used for (biasing
+            // a speech recognizer against ALL of a game's names, not a sample of them).
+            // 200k comfortably covers even every category on at once (~121k measured).
+            text: formatOutput(
+              {
+                term_count: sorted.length,
+                sources,
+                local_data_configured: Boolean(GAME_DATA_DIR),
+                terms: sorted,
+              },
+              200_000,
+            ),
           },
         ],
       };
