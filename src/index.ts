@@ -5,7 +5,7 @@ import axios, { AxiosInstance, AxiosRequestConfig } from "axios";
 import dotenv from "dotenv";
 import { z } from "zod";
 
-dotenv.config();
+dotenv.config({ quiet: true });
 
 const UEX_API_KEY = process.env.UEXTOKEN;
 const UEX_BASE_URL = "https://api.uexcorp.space/2.0";
@@ -211,6 +211,65 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             },
           },
           required: ["title"],
+        },
+      },
+      {
+        name: "scw_get_ship_vendors",
+        description:
+          "Get a list of vendors/dealers selling a specific ship with their locations and system info.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            ship_name: {
+              type: "string",
+              description: "The name of the ship (e.g., 'Ursa Medivac', 'Carrack', '300i').",
+            },
+          },
+          required: ["ship_name"],
+        },
+      },
+      {
+        name: "scw_search_ships_by_vendor",
+        description:
+          "Search for ships available at a specific vendor/location, optionally filtered by system.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            vendor_name: {
+              type: "string",
+              description: "The vendor/dealer name (e.g., 'Ruin Station', 'Port Tressler').",
+            },
+            star_system_name: {
+              type: "string",
+              description: "Optional: Filter by star system (e.g., 'Pyro', 'Stanton').",
+            },
+          },
+          required: ["vendor_name"],
+        },
+      },
+      {
+        name: "uex_get_terminal_inventory",
+        description:
+          "Get inventory (items, ships, weapons) sold at a specific terminal from UEX data.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            terminal_id: {
+              type: "number",
+              description: "The UEX terminal ID (e.g., 473 for Ruin Station Buy and Fly).",
+            },
+            terminal_name: {
+              type: "string",
+              description:
+                "Optional: Terminal name to search for (e.g., 'Ruin Station', 'Checkmate').",
+            },
+            inventory_type: {
+              type: "string",
+              enum: ["ships", "weapons", "armor", "components", "all"],
+              description:
+                "Type of inventory to retrieve (ships, weapons, armor, components, or all).",
+            },
+          },
         },
       },
     ],
@@ -484,6 +543,247 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       return {
         content: [{ type: "text", text: textContent || formatOutput(response.data) }],
+      };
+    }
+
+    if (name === "scw_get_ship_vendors") {
+      const { ship_name } = z.object({ ship_name: z.string() }).parse(args);
+      try {
+        // Try fetching ship details first to get vendor info
+        const shipResponse = await fetchWithCache(
+          scwClient,
+          `/vehicles/${encodeURIComponent(ship_name)}`,
+        );
+
+        let vendors: Record<string, unknown>[] = [];
+        if (shipResponse.data && isObject(shipResponse.data.data)) {
+          const shipData = shipResponse.data.data;
+          // Look for vendor info in ship data
+          if ("vendors" in shipData && Array.isArray(shipData.vendors)) {
+            vendors = shipData.vendors as Record<string, unknown>[];
+          }
+          // Also include basic ship info for reference
+          const shipInfo = {
+            ship_name: shipData.name || ship_name,
+            ship_type: shipData.type,
+            ship_manufacturer: shipData.manufacturer,
+            vendors: vendors.length > 0 ? vendors : "Vendor data not available in wiki",
+            note:
+              "For real-time vendor availability, check UEX terminals in Pyro (Ruin Station Buy and Fly, Checkmate Ship Parts, etc.) or game vendors.",
+          };
+          return {
+            content: [{ type: "text", text: formatOutput(shipInfo) }],
+          };
+        }
+      } catch {
+        // Fallback: return helpful info about checking vendors
+      }
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: formatOutput({
+              query: ship_name,
+              message:
+                "Ship vendor data not found in Star Citizen Wiki. Check these locations for ships:",
+              vendors_to_check: [
+                {
+                  location: "Ruin Station",
+                  system: "Pyro",
+                  terminal: "Buy and Fly (BFRUI)",
+                  note: "Primary new ship dealer in Pyro",
+                },
+                {
+                  location: "Checkmate Station",
+                  system: "Pyro",
+                  terminal: "Ship Parts (SPCHE)",
+                  note: "Ship upgrades and components",
+                },
+                {
+                  location: "Port Tressler",
+                  system: "Stanton",
+                  terminal: "Aegis Dynamics",
+                  note: "Aegis manufacturer dealer",
+                },
+              ],
+              note: "Use uex_get_terminals to find full vendor list by system",
+            }),
+          },
+        ],
+      };
+    }
+
+    if (name === "scw_search_ships_by_vendor") {
+      const { vendor_name, star_system_name } = z
+        .object({
+          vendor_name: z.string(),
+          star_system_name: z.string().optional(),
+        })
+        .parse(args);
+
+      // Get terminals by vendor name from UEX
+      const terminalsResponse = await fetchWithCache(uexClient, "/terminals");
+      let terminals = terminalsResponse.data.data;
+
+      if (Array.isArray(terminals)) {
+        terminals = terminals.filter(
+          (t: Record<string, unknown>) =>
+            (typeof t.name === "string" &&
+              t.name.toLowerCase().includes(vendor_name.toLowerCase())) ||
+            (typeof t.fullname === "string" &&
+              t.fullname.toLowerCase().includes(vendor_name.toLowerCase())) ||
+            (typeof t.nickname === "string" &&
+              t.nickname.toLowerCase().includes(vendor_name.toLowerCase())),
+        );
+
+        if (star_system_name) {
+          terminals = terminals.filter(
+            (t: Record<string, unknown>) =>
+              typeof t.star_system_name === "string" &&
+              t.star_system_name.toLowerCase() === star_system_name.toLowerCase(),
+          );
+        }
+
+        const vendorInfo = terminals.map((t: Record<string, unknown>) => ({
+          vendor_name: t.nickname || t.name,
+          full_name: t.fullname,
+          location: `${t.planet_name || t.space_station_name || "Space"}`,
+          system: t.star_system_name,
+          has_ship_shop: t.is_shop_vehicle === 1,
+          terminal_code: t.code,
+          terminal_id: t.id,
+        }));
+
+        if (vendorInfo.length > 0) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: formatOutput({
+                  vendor_query: vendor_name,
+                  system_filter: star_system_name || "All systems",
+                  vendors_found: vendorInfo,
+                  note: "Use scw_get_vehicle to get specific ship details and availability",
+                }),
+              },
+            ],
+          };
+        }
+      }
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: formatOutput({
+              vendor_query: vendor_name,
+              message: "No vendors found matching query",
+              suggestion: "Try using uex_get_terminals to list all terminals in a system",
+            }),
+          },
+        ],
+      };
+    }
+
+    if (name === "uex_get_terminal_inventory") {
+      const { terminal_id, terminal_name, inventory_type } = z
+        .object({
+          terminal_id: z.number().optional(),
+          terminal_name: z.string().optional(),
+          inventory_type: z.enum(["ships", "weapons", "armor", "components", "all"]).optional(),
+        })
+        .parse(args);
+
+      const response = await fetchWithCache(uexClient, "/terminals");
+      let terminals = response.data.data;
+
+      if (Array.isArray(terminals)) {
+        if (terminal_id) {
+          terminals = terminals.filter((t: Record<string, unknown>) => t.id === terminal_id);
+        }
+        if (terminal_name) {
+          terminals = terminals.filter(
+            (t: Record<string, unknown>) =>
+              (typeof t.name === "string" &&
+                t.name.toLowerCase().includes(terminal_name.toLowerCase())) ||
+              (typeof t.nickname === "string" &&
+                t.nickname.toLowerCase().includes(terminal_name.toLowerCase())),
+          );
+        }
+
+        const inventoryFilter = inventory_type || "all";
+        const terminalInventory = terminals.map((t: Record<string, unknown>) => {
+          const inventory: Record<string, unknown> = {};
+
+          if (
+            inventoryFilter === "ships" ||
+            inventoryFilter === "all" ||
+            (t.is_shop_vehicle === 1 && inventoryFilter === "all")
+          ) {
+            if (t.is_shop_vehicle === 1) {
+              inventory.ships = "Available";
+            }
+          }
+          if (inventoryFilter === "weapons" || inventoryFilter === "all") {
+            if (t.is_shop_fps === 1) {
+              inventory.weapons = "Available";
+            }
+          }
+          if (inventoryFilter === "armor" || inventoryFilter === "all") {
+            if (t.is_shop_fps === 1) {
+              inventory.armor = "Available (with FPS items)";
+            }
+          }
+          if (inventoryFilter === "components" || inventoryFilter === "all") {
+            if (t.is_shop_vehicle === 1) {
+              inventory.components = "Available";
+            }
+          }
+
+          return {
+            terminal_id: t.id,
+            terminal_name: t.nickname || t.name,
+            full_name: t.fullname,
+            location: `${t.planet_name || ""}/${t.space_station_name || t.orbit_name || ""}`.replace(
+              /^\/+|\/+$/g,
+              "",
+            ),
+            system: t.star_system_name,
+            inventory: Object.keys(inventory).length > 0 ? inventory : "No inventory matching filter",
+            faction: t.faction_name,
+            game_version: t.game_version,
+          };
+        });
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: formatOutput({
+                query: {
+                  terminal_id,
+                  terminal_name,
+                  inventory_type: inventoryFilter,
+                },
+                results: terminalInventory,
+                note: "For specific item/ship pricing, use commodity_prices or search tools",
+              }),
+            },
+          ],
+        };
+      }
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: formatOutput({
+              message: "No terminals found",
+              suggestion: "Use uex_get_terminals to find terminals",
+            }),
+          },
+        ],
       };
     }
 
