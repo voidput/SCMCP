@@ -1,3 +1,10 @@
+# [1.5.0](https://github.com/voidput/SCMCP/compare/v1.4.1...v1.5.0) (2026-09-05)
+
+
+### Features
+
+* SCMCP_TOOLS scopes which tools this server advertises ([01bb910](https://github.com/voidput/SCMCP/commit/01bb91027aa56006a0b9ce53c426048d2f95825e))
+
 ## [1.4.1](https://github.com/voidput/SCMCP/compare/v1.4.0...v1.4.1) (2026-09-05)
 
 
