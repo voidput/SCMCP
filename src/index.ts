@@ -221,7 +221,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             },
             per_page: {
               type: "number",
-              description: "Optional: Results per page (default 20, max 60).",
+              description: "Optional: Results per page (default 20, max 50).",
             },
           },
         },
@@ -281,7 +281,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             },
             per_page: {
               type: "number",
-              description: "Optional: Results per page (default 20, max 60).",
+              description: "Optional: Results per page (default 20, max 50).",
             },
           },
         },
@@ -536,6 +536,9 @@ function formatOutput(data: unknown): string {
 
 const SNAPSHOT_DIR = process.env.SCMCP_SNAPSHOT_DIR || path.join(process.cwd(), ".snapshots");
 
+/** The wiki API caps page size at 50 regardless of what is requested. */
+const SCW_MAX_PAGE_SIZE = 50;
+
 function snapshotPath(dataset: string, label: string): string {
   const safeLabel = label.replace(/[^a-zA-Z0-9._-]/g, "_");
   return path.join(SNAPSHOT_DIR, `${dataset}__${safeLabel}.json`);
@@ -551,15 +554,19 @@ async function fetchAllPages(
 
   for (;;) {
     const response = await scwClient.get(endpoint, {
-      params: { ...params, page, per_page: 60 },
+      // The API ignores `per_page`; page size is `page[size]` and is capped at 50.
+      params: { ...params, page, "page[size]": SCW_MAX_PAGE_SIZE },
     });
     const pageData = response.data?.data;
     if (!Array.isArray(pageData) || pageData.length === 0) break;
     collected.push(...pageData);
 
     const lastPage = response.data?.meta?.last_page;
-    if (typeof lastPage === "number" && page >= lastPage) break;
-    if (typeof lastPage !== "number" && pageData.length < 60) break;
+    if (typeof lastPage === "number") {
+      if (page >= lastPage) break;
+    } else if (pageData.length < SCW_MAX_PAGE_SIZE) {
+      break;
+    }
     page += 1;
   }
 
@@ -823,7 +830,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       const params: Record<string, unknown> = {
         page: page ?? 1,
-        per_page: per_page ?? 20,
+        // `per_page` is ignored by this API; page size is `page[size]`, capped at 50.
+        "page[size]": Math.min(per_page ?? 20, SCW_MAX_PAGE_SIZE),
       };
       if (manufacturer) params["filter[manufacturer]"] = manufacturer;
       if (role) params["filter[role]"] = role;
@@ -866,7 +874,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       const params: Record<string, unknown> = {
         page: page ?? 1,
-        per_page: per_page ?? 20,
+        // `per_page` is ignored by this API; page size is `page[size]`, capped at 50.
+        "page[size]": Math.min(per_page ?? 20, SCW_MAX_PAGE_SIZE),
       };
       if (type) params["filter[type]"] = type;
       if (sub_type) params["filter[sub_type]"] = sub_type;
