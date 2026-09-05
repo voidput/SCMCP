@@ -1,3 +1,10 @@
+# [1.3.0](https://github.com/voidput/SCMCP/compare/v1.2.0...v1.3.0) (2026-09-05)
+
+
+### Features
+
+* add uex_search_marketplace tool ([f960c40](https://github.com/voidput/SCMCP/commit/f960c404e6585ceddae0c48ecdd74b98b700db37))
+
 # [1.2.0](https://github.com/voidput/SCMCP/compare/v1.1.1...v1.2.0) (2026-09-05)
 
 
