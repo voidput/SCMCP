@@ -1,3 +1,10 @@
+# [1.4.0](https://github.com/voidput/SCMCP/compare/v1.3.0...v1.4.0) (2026-09-05)
+
+
+### Features
+
+* extend sc_get_vocabulary with weapons, attachments and item categories ([2e5bbc1](https://github.com/voidput/SCMCP/commit/2e5bbc146efab0a53b084f1145be9dc0f5b9ea6f))
+
 # [1.3.0](https://github.com/voidput/SCMCP/compare/v1.2.0...v1.3.0) (2026-09-05)
 
 
