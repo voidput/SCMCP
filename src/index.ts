@@ -463,7 +463,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       {
         name: "sc_get_vocabulary",
         description:
-          "Distinct in-game names for biasing a speech recognizer's initial prompt - commodities, manufacturers, and (when SCMCP_GAME_DATA_DIR is set) locally extracted names like ore signatures, blueprints, and Wikelo trades no public API exposes. Local and public sources are merged; local is preferred when both exist for the same term. Always works with no local data configured - it just returns fewer terms.",
+          "Distinct in-game names for biasing a speech recognizer's initial prompt - commodities, manufacturers, FPS and ship weapons, weapon attachments, and (when SCMCP_GAME_DATA_DIR is set) locally extracted names like ore signatures, blueprints, and Wikelo trades no public API exposes. Local and public sources are merged; local is preferred when both exist for the same term. Armor and clothes are excluded by default - thousands of cosmetic colour variants that dilute the prompt far more than they help. Always works with no local data configured - it just returns fewer terms.",
         inputSchema: {
           type: "object",
           properties: {
@@ -474,6 +474,26 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             include_manufacturers: {
               type: "boolean",
               description: "Include ship/vehicle manufacturer names from the Star Citizen Wiki (default true).",
+            },
+            include_weapons: {
+              type: "boolean",
+              description: "Include FPS and ship weapon names, ~580 terms (default true).",
+            },
+            include_attachments: {
+              type: "boolean",
+              description: "Include weapon attachment names (scopes, magazines, ...), ~106 terms (default true).",
+            },
+            include_armor: {
+              type: "boolean",
+              description: "Include armor piece names, ~2400 terms including colour variants (default false).",
+            },
+            include_clothes: {
+              type: "boolean",
+              description: "Include clothing item names, ~1900 terms including colour variants (default false).",
+            },
+            include_components: {
+              type: "boolean",
+              description: "Include ship component names (shields, coolers, quantum drives, ...), ~3300 terms (default false).",
             },
             limit: {
               type: "number",
@@ -1110,10 +1130,24 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     }
 
     if (name === "sc_get_vocabulary") {
-      const { include_commodities, include_manufacturers, limit } = z
+      const {
+        include_commodities,
+        include_manufacturers,
+        include_weapons,
+        include_attachments,
+        include_armor,
+        include_clothes,
+        include_components,
+        limit,
+      } = z
         .object({
           include_commodities: z.boolean().optional(),
           include_manufacturers: z.boolean().optional(),
+          include_weapons: z.boolean().optional(),
+          include_attachments: z.boolean().optional(),
+          include_armor: z.boolean().optional(),
+          include_clothes: z.boolean().optional(),
+          include_components: z.boolean().optional(),
           limit: z.number().optional(),
         })
         .parse(args || {});
@@ -1165,6 +1199,31 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           sources.push(`SCW manufacturers (${added} new terms)`);
         } catch (err) {
           sources.push(`SCW manufacturers unavailable: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+
+      const itemEndpoints: [string, string, boolean][] = [
+        ["weapons", "/weapons", include_weapons !== false],
+        ["vehicle-weapons", "/vehicle-weapons", include_weapons !== false],
+        ["weapon-attachments", "/weapon-attachments", include_attachments !== false],
+        ["armor", "/armor", include_armor === true],
+        ["clothes", "/clothes", include_clothes === true],
+        ["vehicle-items", "/vehicle-items", include_components === true],
+      ];
+      for (const [label, endpoint, wanted] of itemEndpoints) {
+        if (!wanted) continue;
+        try {
+          const rows = await fetchAllPages(endpoint);
+          let added = 0;
+          for (const row of rows) {
+            const itemName = (row as Record<string, unknown>).name;
+            if (typeof itemName !== "string" || !itemName) continue;
+            if (!terms.has(itemName)) added += 1;
+            terms.add(itemName);
+          }
+          sources.push(`SCW ${label} (${added} new terms)`);
+        } catch (err) {
+          sources.push(`SCW ${label} unavailable: ${err instanceof Error ? err.message : String(err)}`);
         }
       }
 
